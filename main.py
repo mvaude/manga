@@ -5,6 +5,7 @@ import re
 import sys
 import time
 from urllib.request import urlopen
+import shutil
 
 from bs4 import BeautifulSoup
 import requests
@@ -16,8 +17,9 @@ class Manga(object):
     def __init__(self, manga):
         self.name = manga
         self.get_chapters()
+        self.scans = {}
 
-    def get_scan(self, url):
+    async def get_scan(self, url):
         #`print("URL: {}".format(url))
         # html = urlopen(url)
         html = requests.get(url, allow_redirects=False)
@@ -48,7 +50,7 @@ class Manga(object):
 
     def get_chapters(self):
         self.chapters = []
-        r = requests.get("{}/{}/".format(self.base_url, self.name))
+        r = requests.get("{}{}/".format(self.base_url, self.name))
         r.close()
         if r.status_code == 200:
             bsObj = BeautifulSoup(r.text, "html.parser")
@@ -64,25 +66,35 @@ class Manga(object):
         self.chapters = sorted(self.chapters) 
         # print(self.chapters)
 
-    async def get_scans(self, url, chapter, page):
-        scan = self.get_scan(url)
-        if scan == "":
-            return
+    async def get_scans(self, scan, chapter, page):
         self.write_scan(scan, chapter, page)
         return (chapter, page)
+
+    async def zip_chapter(self, chapter):
+        if type(chapter) == float:
+            pathname = '{}/{}-chapter-{:08.3f}'.format(self.name, self.name, chapter)
+        else:
+            pathname = '{}/{}-chapter-{:04d}.000'.format(self.name, self.name, chapter)
+        shutil.make_archive(pathname, 'zip', '{}/{}'.format(self.name, chapter))
+        os.rename('{}.zip'.format(pathname), '{}.cbz'.format(pathname))
+        return "chapter {} compressed".format(chapter)
+
+    async def zip_chapters(self):
+        tasks = []
+        for chapter in self.chapters:
+            tasks.append(self.zip_chapter(chapter))
+        return tasks
 
 async def get_routines(manga):
     res = []
     for chapter in manga.chapters:
         for page in range(1, 1000):
             url = "{}{}/{}/{}/".format(manga.base_url, manga.name, chapter, page)
-            html = requests.get(url, allow_redirects=False)
-            html.close()
-            if html.status_code != 200:
+            scan = await manga.get_scan(url)
+            if scan == "":
                 break
-            res.append(manga.get_scans(url, chapter, page))
+            res.append(manga.get_scans(scan, chapter, page))
     return res
-
 
 async def main(manga):
     mng = Manga(manga)
@@ -98,6 +110,10 @@ async def main(manga):
     for item in completed:
         (chapter, page) = item.result()
         res.append((chapter, page))
+    routines = await mng.zip_chapters()
+    completed, pending = await asyncio.wait(routines)
+    for item in completed:
+        print(item.result())
     print("Total time: {}s".format(time.time() - start_time))
 
 if __name__ == "__main__":

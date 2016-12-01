@@ -51,7 +51,9 @@ class Manga:
     async def get_chapters(self, client):
         self.chapters = {}
         self.chapter_pages = {}
-        async with client.get("{}{}{}/".format(self.base_url, self.manga_url, self.name)) as r:
+        url = '{}{}{}'.format(self.base_url, self.manga_url, self.name)
+        # print('type of base_url: {}\ntype of manga.url: {}\n type of name: {}\ntype of url: {}'.format(type(self.base_url), type(self.manga_url), type(self.name), type(url)))
+        async with client.get(url) as r:
             if r.status == 200:
                 bsObj = BeautifulSoup(await r.text(encoding='utf-8'), "html.parser")
                 for scan in bsObj.find_all("a", "chapterLink"):
